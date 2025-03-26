@@ -28,6 +28,7 @@ For more details run the following command:
     comet-train --help
 ```
 """
+
 import json
 import logging
 import warnings
@@ -36,7 +37,7 @@ import torch
 from jsonargparse import ActionConfigFile, ArgumentParser, namespace_to_dict
 from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint)
+                                         ModelCheckpoint, TQDMProgressBar)
 from pytorch_lightning.trainer.trainer import Trainer
 
 from comet.models import (RankingMetric, ReferencelessRegression,
@@ -45,6 +46,7 @@ from comet.models import (RankingMetric, ReferencelessRegression,
 torch.set_float32_matmul_precision('high')
 
 logger = logging.getLogger(__name__)
+progress_bar_callback = TQDMProgressBar(refresh_rate=1000)
 
 
 def read_arguments() -> ArgumentParser:
@@ -87,7 +89,7 @@ def initialize_trainer(configs) -> Trainer:
     )
     trainer_args = namespace_to_dict(configs.trainer.init_args)
     lr_monitor = LearningRateMonitor(logging_interval="step")
-    trainer_args["callbacks"] = [early_stop_callback, checkpoint_callback, lr_monitor]
+    trainer_args["callbacks"] = [early_stop_callback, checkpoint_callback, lr_monitor, progress_bar_callback]
     print("TRAINER ARGUMENTS: ")
     print(json.dumps(trainer_args, indent=4, default=lambda x: x.__dict__))
     trainer = Trainer(**trainer_args)

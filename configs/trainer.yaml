@@ -1,13 +1,13 @@
 class_path: pytorch_lightning.trainer.trainer.Trainer
 init_args:
   accelerator: gpu
-  devices: 2
-  strategy: ddp # Uncomment this line for distributed training
+  devices: 1
+  #strategy: ddp # Uncomment this line for distributed training
   #precision: 16
   accumulate_grad_batches: 8
   benchmark: null
   check_val_every_n_epoch: 1
-  default_root_dir: null
+  default_root_dir: '/home/mila/c/clea.chataigner/scratch/lightning_logs/nllb-200-distilled-600M'
   deterministic: False
   fast_dev_run: False
   max_epochs: 5
@@ -37,4 +37,3 @@ init_args:
   barebones: false
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
-  default_root_dir: null

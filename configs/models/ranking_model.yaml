@@ -7,8 +7,8 @@ ranking_metric:
     encoder_learning_rate: 1.0e-06
     learning_rate: 1.5e-05
     layerwise_decay: 0.95
-    encoder_model: XLM-RoBERTa
-    pretrained_model: xlm-roberta-base
+    encoder_model: Universal
+    pretrained_model: facebook/nllb-200-distilled-600M
     pool: avg
     layer: mix
     layer_transformation: sparsemax
@@ -16,9 +16,9 @@ ranking_metric:
     dropout: 0.1
     batch_size: 16
     train_data: 
-      - data/1720-daRR.csv
+      - data/1719-daRR.csv
     validation_data:
-      - data/2021-daRR.csv
+      - data/2020-daRR.csv
       
 trainer: ../trainer.yaml
 early_stopping: ../early_stopping.yaml
