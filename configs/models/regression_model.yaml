@@ -7,8 +7,8 @@ regression_metric:
     encoder_learning_rate: 1.0e-06
     learning_rate: 1.5e-05
     layerwise_decay: 0.95
-    encoder_model: XLM-RoBERTa
-    pretrained_model: xlm-roberta-large
+    encoder_model: Universal
+    pretrained_model: facebook/nllb-200-distilled-600M
     pool: avg
     layer: mix
     layer_transformation: sparsemax
@@ -19,9 +19,7 @@ regression_metric:
     train_data: 
       - data/1720-da.csv
     validation_data: 
-      - data/wmt-ende-newstest2021.csv
-      - data/wmt-enru-newstest2021.csv
-      - data/wmt-zhen-newstest2021.csv
+      - data/2021-da.csv
     hidden_sizes:
       - 3072
       - 1024

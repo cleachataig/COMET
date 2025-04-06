@@ -137,3 +137,4 @@ logs/
 
 #wmt24
 evaluation_wmt24metrics/metrics_inputs/
+evaluation_wmt24metrics/scores/input

@@ -7,7 +7,7 @@ init_args:
   accumulate_grad_batches: 8
   benchmark: null
   check_val_every_n_epoch: 1
-  default_root_dir: '/home/mila/c/clea.chataigner/scratch/lightning_logs/nllb-200-distilled-600M'
+  default_root_dir: '/home/mila/c/clea.chataigner/scratch/lightning_logs/xlm-roberta-base'
   deterministic: False
   fast_dev_run: False
   max_epochs: 5

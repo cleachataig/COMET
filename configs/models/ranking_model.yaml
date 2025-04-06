@@ -1,20 +1,20 @@
 ranking_metric:
   class_path: comet.models.RankingMetric
   init_args:
-    nr_frozen_epochs: 0.3
-    keep_embeddings_frozen: True
+    nr_frozen_epochs: 0.1
+    keep_embeddings_frozen: False
     optimizer: AdamW
-    encoder_learning_rate: 1.0e-06
-    learning_rate: 1.5e-05
+    encoder_learning_rate: 1.0e-05
+    learning_rate: 3e-05
     layerwise_decay: 0.95
     encoder_model: Universal
-    pretrained_model: facebook/nllb-200-distilled-600M
+    pretrained_model: setu4993/LaBSE
     pool: avg
     layer: mix
-    layer_transformation: sparsemax
-    layer_norm: False
+    layer_transformation: softmax
+    layer_norm: True
     dropout: 0.1
-    batch_size: 16
+    batch_size: 8
     train_data: 
       - data/1719-daRR.csv
     validation_data:
