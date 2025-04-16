@@ -194,6 +194,8 @@ class UniversalEncoder(Encoder):
                 layers = self.model.encoder.block
             elif hasattr(self.model.encoder, "layers"):  # NLLB models
                 layers = self.model.encoder.layers
+            elif hasattr(self.model.encoder, "albert_layer_groups"):  # ALBERT
+                layers = self.model.encoder.albert_layer_groups[0].albert_layers
             else:
                 raise ValueError("Unknown encoder layer structure.")
         else:

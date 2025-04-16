@@ -29,7 +29,9 @@ For more details run the following command:
 ```
 """
 
+import os
 import json
+from pprint import pprint
 import logging
 import warnings
 
@@ -39,6 +41,10 @@ from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
                                          ModelCheckpoint, TQDMProgressBar)
 from pytorch_lightning.trainer.trainer import Trainer
+
+import optuna
+from optuna.samplers import GridSampler
+import optuna.visualization as vis
 
 from comet.models import (RankingMetric, ReferencelessRegression,
                           RegressionMetric, UnifiedMetric)
@@ -77,6 +83,23 @@ def read_arguments() -> ArgumentParser:
         action="store_true",
         help="Strictly enforce that the keys in checkpoint_path match the keys returned by this module's state dict.",
     )
+    parser.add_argument(
+    "--search",
+    action="store_true",
+    help="Enable hyperparameter search with Optuna.",
+    )
+    parser.add_argument(
+        "--search_space",
+        type=str,
+        default=None,
+        help="Path to JSON file defining the hyperparameter search space.",
+    )
+    parser.add_argument(
+        "--n_trials",
+        type=int,
+        default=5,
+        help="Number of trials for parameter search.",
+    )
     return parser
 
 
@@ -91,7 +114,8 @@ def initialize_trainer(configs) -> Trainer:
     lr_monitor = LearningRateMonitor(logging_interval="step")
     trainer_args["callbacks"] = [early_stop_callback, checkpoint_callback, lr_monitor, progress_bar_callback]
     print("TRAINER ARGUMENTS: ")
-    print(json.dumps(trainer_args, indent=4, default=lambda x: x.__dict__))
+    pprint(trainer_args)
+    #print(json.dumps(trainer_args, indent=4, default=lambda x: x.__dict__))
     trainer = Trainer(**trainer_args)
     return trainer
 
@@ -171,23 +195,91 @@ def initialize_model(configs):
 
     return model
 
+def save_visualizations(study, output_dir="optuna_viz"):
+    os.makedirs(output_dir, exist_ok=True)
+    vis.plot_optimization_history(study).write_html(f"{output_dir}/history.html")
+    vis.plot_param_importances(study).write_html(f"{output_dir}/importances.html")
+    vis.plot_parallel_coordinate(study).write_html(f"{output_dir}/parallel.html")
+    vis.plot_contour(study).write_html(f"{output_dir}/contour.html")
+    print(f"Saved visualizations to {output_dir}/")
+
+
+def hyperparameter_search(cfg):
+    assert cfg.search_space is not None, "You must specify --search_space."
+
+    with open(cfg.search_space) as f:
+        search_space = json.load(f)
+    if cfg.regression_metric is not None:
+        model_type = "regression"
+        pretrained = cfg.regression_metric.init_args.pretrained_model
+    elif cfg.ranking_metric is not None:
+        model_type = "ranking"
+        pretrained = cfg.ranking_metric.init_args.pretrained_model
+    else:
+        model_type = "unknown"
+        pretrained = "unknown"
+
+    study_name=f"{model_type}-{pretrained.replace('/', '_')}"
+    storage_url = f"sqlite:///{study_name}.db"
+
+    def objective(trial):
+        try:
+            # Dynamically set trial parameters
+            for param, values in search_space.items():
+                value = trial.suggest_categorical(param, values)
+                if cfg.regression_metric is not None:
+                    setattr(cfg.regression_metric.init_args, param, value)
+                elif cfg.ranking_metric is not None:
+                    setattr(cfg.ranking_metric.init_args, param, value)
+
+            model = initialize_model(cfg)
+            trainer = initialize_trainer(cfg)
+            trainer.fit(model)
+
+            # Adjust based on your validation metric name
+            val_metric = trainer.callback_metrics.get("val_kendall")
+            if val_metric is not None:
+                return val_metric.item()
+            return float("inf")  # fallback
+        
+        except Exception as e:
+            print(f"[Trial {trial.number}] Failed with error: {e}")
+            raise optuna.TrialPruned()
+
+
+    study = optuna.create_study(
+        direction="minimize",
+        sampler=GridSampler(search_space),
+        study_name=study_name,
+        storage=storage_url,
+        load_if_exists=True,
+    )
+    study.optimize(objective, n_trials=cfg.n_trials)
+    save_visualizations(study, output_dir=f"optuna_viz/{study_name}")
+
+    print("Best hyperparameters found:")
+    print(study.best_params)
 
 def train_command() -> None:
     parser = read_arguments()
     cfg = parser.parse_args()
     seed_everything(cfg.seed_everything)
 
-    trainer = initialize_trainer(cfg)
-    model = initialize_model(cfg)
-    # Related to train/val_dataloaders:
-    # 2 workers per gpu is enough! If set to the number of cpus on this machine
-    # it throws another exception saying its too many workers.
-    warnings.filterwarnings(
-        "ignore",
-        category=UserWarning,
-        message=".*Consider increasing the value of the `num_workers` argument` .*",
-    )
-    trainer.fit(model)
+    if cfg.search:
+        hyperparameter_search(cfg)
+    else:
+        trainer = initialize_trainer(cfg)
+        model = initialize_model(cfg)
+
+        # Related to train/val_dataloaders:
+        # 2 workers per gpu is enough! If set to the number of cpus on this machine
+        # it throws another exception saying its too many workers.
+        warnings.filterwarnings(
+            "ignore",
+            category=UserWarning,
+            message=".*Consider increasing the value of the `num_workers` argument` .*",
+        )
+        trainer.fit(model)
 
 
 if __name__ == "__main__":

@@ -5,4 +5,6 @@ model_pairs = {
     "Universal": "google/mt5-base",
     "Universal": "cis-lmu/glot500-base",
     "Universal": "facebook/nllb-200-distilled-600M",
+    "Universal":"ai4bharat/indic-bert",
+    "Universal":"Davlan/afro-xlmr-large"
     }

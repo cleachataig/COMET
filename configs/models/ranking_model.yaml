@@ -2,13 +2,13 @@ ranking_metric:
   class_path: comet.models.RankingMetric
   init_args:
     nr_frozen_epochs: 0.1
-    keep_embeddings_frozen: False
+    keep_embeddings_frozen: True
     optimizer: AdamW
     encoder_learning_rate: 1.0e-05
     learning_rate: 3e-05
     layerwise_decay: 0.95
     encoder_model: Universal
-    pretrained_model: setu4993/LaBSE
+    pretrained_model: cis-lmu/glot500-base
     pool: avg
     layer: mix
     layer_transformation: softmax

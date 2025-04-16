@@ -8,7 +8,7 @@ regression_metric:
     learning_rate: 1.5e-05
     layerwise_decay: 0.95
     encoder_model: Universal
-    pretrained_model: facebook/nllb-200-distilled-600M
+    pretrained_model: ai4bharat/indic-bert
     pool: avg
     layer: mix
     layer_transformation: sparsemax
@@ -17,7 +17,7 @@ regression_metric:
     dropout: 0.1
     batch_size: 16
     train_data: 
-      - data/1720-da.csv
+      - data/1720-da.mlqe-src.csv
     validation_data: 
       - data/2021-da.csv
     hidden_sizes:

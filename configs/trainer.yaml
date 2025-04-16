@@ -10,7 +10,7 @@ init_args:
   default_root_dir: '/home/mila/c/clea.chataigner/scratch/lightning_logs/xlm-roberta-base'
   deterministic: False
   fast_dev_run: False
-  max_epochs: 5
+  max_epochs: 10
   min_epochs: 1
   max_steps: -1
   min_steps: null
