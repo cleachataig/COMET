@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 ## Data
 
-Before running any scripts, download the `data/` folder from [this link](gglink) and place it at the root of the repository.
+Before running any scripts, download the `data/` folder from [this link](https://drive.google.com/file/d/1yhMx111AOwBaN5zw1jt9wd6h1cd6jY54/view?usp=sharing) and place it at the root of the repository.
 
 ---
 
