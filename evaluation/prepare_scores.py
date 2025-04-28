@@ -11,9 +11,12 @@ from tqdm import tqdm
 from typing import Dict, List
 
 from comet import download_model, load_from_checkpoint
+from transformers import AutoTokenizer, Gemma3ForCausalLM
+import torch
+import openai
 
-DATA_FOLDER="../data/"
-OUTPUT_FOLDER='../results/scores/'
+DATA_FOLDER="./data/"
+OUTPUT_FOLDER='./results/scores/'
 
 SRC_PATH = DATA_FOLDER+"metrics_inputs/txt/{}/sources/{}.{}.src.{}"
 REFA_PATH = DATA_FOLDER+"metrics_inputs/txt/{}/references/{}.{}.ref.refA.{}"
@@ -46,7 +49,18 @@ CHALLENGE_SETS = [
  #'challenge_dfki']
  
  
-CHALLENGE_SETS_LPS = {'challenge_AfriMTE': ['ary-fr',
+CHALLENGE_SETS_LPS = {'challenge_bioMQM': ['de-en',
+  'en-de',
+  'en-es',
+  'en-fr',
+  'en-ru',
+  'en-zh',
+  'es-en',
+  'fr-en',],
+  #'pt-en',
+  #'ru-en',
+  #'zh-en'],}
+'challenge_AfriMTE': ['ary-fr',
   'en-arz',
   'en-fr',
   'en-hau',
@@ -66,19 +80,18 @@ CHALLENGE_SETS_LPS = {'challenge_AfriMTE': ['ary-fr',
   'en-ml',],
  #'challenge_MSLC24-A': ['en-de', 'en-es', 'ja-zh'],
  #'challenge_MSLC24-B': ['en-de', 'en-es', 'ja-zh'],
- 'challenge_bioMQM': ['de-en',
-  'en-de',
-  'en-es',
-  'en-fr',
-  'en-ru',
-  'en-zh',
-  'es-en',
-  'fr-en',
-  'pt-en',
-  'ru-en',
-  'zh-en'],}
+ }
  #'challenge_dfki': ['en-de', 'en-ru']}
 
+
+def load_llm_gemma_pipeline(model_name="google/gemma-3-27b-it"):
+    model = Gemma3ForCausalLM.from_pretrained(
+        model_name, torch_dtype=torch.float16, device_map="auto"
+        )
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    return (model, tokenizer)
 
 def load_comet(model="Unbabel/wmt20-comet-da",
     model_storage_path=None):
@@ -107,6 +120,82 @@ def score_comet(samples,
         )
     return output.scores
 
+def llm_score_segment(source: str, translation: str, reference: str, model_tuple, max_new_tokens=100):
+
+    prompt = f"""You are a professional translator. You should assess the machine translation adequacy on a continuous scale [0-100] based on critical points described below:
+
+    [0]: Nonsense/No meaning preserved: Nearly all information is lost between the translation and source.
+    [34]: Some meaning preserved: The translation preserves some of the meaning of the source but misses significant parts.
+    [67]: Most meaning preserved: The translation retains most of the meaning of the source.
+    [100]: Perfect meaning: The meaning of the translation is completely consistent with the source.
+
+    Note that your score should lie in between two critical points, inclusive of the points themselves.
+
+    Presented below are the source sentence, its machine translation, and the corresponding reference translation:
+    Source sentence: {source}
+    Machine translation: {translation}
+    Reference translation: {reference}
+
+    Please assess the above machine translation based on the source sentence and the reference translation. You should only output the final score."""
+
+    messages = [
+        {
+            "role": "system",
+            "content": [{"type": "text", "text": "You are a helpful assistant."}]
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
+    if model_tuple:
+        model, tokenizer= model_tuple
+        inputs = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+        input_len = inputs["input_ids"].shape[-1]
+
+        try:
+            generation = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+            generation = generation[0][input_len:]
+            score_str = tokenizer.decode(generation, skip_special_tokens=True)
+            try:
+                score = float(score_str.split()[0])
+            except:
+                print(score_str)
+                score = np.nan
+        except Exception as e:
+            print(f"Generation failed: {e}")
+            score = np.nan
+
+    else:    
+        try:
+            client = openai.OpenAI()  # Automatically uses OPENAI_API_KEY from environment
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0
+            )
+            score_str = response.choices[0].message.content.strip()
+            try:
+                score = float(score_str.split()[0])
+            except Exception:
+                print("Unexpected output:", score_str)
+                score = np.nan
+        except Exception as e:
+            print(f"ChatGPT call failed: {e}")
+            score = np.nan
+    return score
+
 def segment_level_scoring(samples: Dict[str, List[str]], metric: str, model=None):
     """ Function that takes source, translations and references along with a metric and returns
     segment level scores.
@@ -129,6 +218,12 @@ def segment_level_scoring(samples: Dict[str, List[str]], metric: str, model=None
     elif metric.startswith("comet"):
         data = [{"src": s, "mt": m, "ref": r} for s, m, r in zip(samples["src"], samples["mt"], samples['ref'])]
         scores=score_comet(data, model)
+    
+    elif 'llm' in metric:
+        scores = [
+            llm_score_segment(s, m, r, model)
+            for s, m, r in zip(samples["src"], samples["mt"], samples["ref"])
+        ]
     
     else:
         raise Exception(f"{metric} segment_scoring is not implemented!!")
@@ -360,7 +455,7 @@ def segment_scores(source, references, system_outputs, metadata, human_scores, l
 
 
 def score_indicmte(language_pair, metric_name, model):
-    file_path=f'metrics_inputs/IndicMTE/{language_pair}.tsv'
+    file_path=DATA_FOLDER+f'metrics_inputs/IndicMTE/{language_pair}.tsv'
     indicmte_df=pd.read_csv(file_path, sep='\t', on_bad_lines='skip')
     systems=indicmte_df.model.unique()
     segment_scores = []
@@ -399,6 +494,21 @@ def score_indicmte(language_pair, metric_name, model):
 
     return pd.DataFrame(segment_scores), pd.DataFrame(system_scores)
 
+def process_language_pair(lp, metric, model):
+    seg_path = OUTPUT_FOLDER + f"partial/{metric}.generaltest2024.{lp}.seg.tsv"
+    sys_path = OUTPUT_FOLDER + f"partial/{metric}.generaltest2024.{lp}.sys.tsv"
+
+    if os.path.exists(seg_path) and os.path.exists(sys_path):
+        segments = pd.read_csv(seg_path, sep="\t", header=None)
+        systems = pd.read_csv(sys_path, sep="\t", header=None)
+    else:
+        source, references, system_outputs, metadata, human_scores = read_data('generaltest2024', lp)
+        segments, systems = segment_scores(source, references, system_outputs, metadata, human_scores, lp, metric, model=model)
+        segments.to_csv(seg_path, index=False, header=False, sep="\t")
+        systems.to_csv(sys_path, index=False, header=False, sep="\t")
+    
+    return segments, systems
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Scores Newstest2020 segments."
@@ -414,49 +524,69 @@ if __name__ == "__main__":
         help="COMET checkpoint.",
         type=str,
     )
+
+    parser.add_argument(
+        "--set",
+        default="all",
+        help="Sets to evaluate.",
+        type=str,
+    )
+
     args = parser.parse_args()
     segment_data, system_data = [], []
     metric=args.baseline
-    model=None
+    model=None 
 
     # Directory to store individual results
-    os.makedirs("scores/partial", exist_ok=True)
+    os.makedirs(OUTPUT_FOLDER+"partial/", exist_ok=True)
+
+    existing_files = set([f for f in os.listdir(OUTPUT_FOLDER+"partial/") if f.startswith(metric + ".")])
 
     if metric.startswith("comet"):
         model=load_comet(args.checkpoint)
+    #elif 'llm' in metric:
+        #model =load_llm_gemma_pipeline()
+    
+    if args.set=='all' or args.set=='challenge':
 
-    for challengeset_name, lps in tqdm(CHALLENGE_SETS_LPS.items(), desc="Processing Challenge Sets"):
-        for lp in lps:
-            seg_path = OUTPUT_FOLDER+f"partial/{metric}.{challengeset_name}.{lp}.seg.tsv"
-            sys_path = OUTPUT_FOLDER+f"partial/{metric}.{challengeset_name}.{lp}.sys.tsv"
+        for challengeset_name, lps in tqdm(CHALLENGE_SETS_LPS.items(), desc="Processing Challenge Sets"):
+            for lp in lps:
+                seg_file = f"{metric}.{challengeset_name}.{lp}.seg.tsv"
+                sys_file = f"{metric}.{challengeset_name}.{lp}.sys.tsv"
+                seg_path = OUTPUT_FOLDER + "partial/" + seg_file
+                sys_path = OUTPUT_FOLDER + "partial/" + sys_file
+                if seg_file in existing_files and sys_file in existing_files:
+                    segments = pd.read_csv(seg_path, sep="\t", header=None)
+                    systems = pd.read_csv(sys_path, sep="\t", header=None)
+                else:
+                    if challengeset_name=='challenge_IndicMTE':
+                        segments, systems=score_indicmte(lp, metric, model=model)
+                    else:
+                        print("starting scoring")
+                        source, references, system_outputs, metadata, human_scores = read_data(challengeset_name, lp)
+                        print("data loaded")
+                        segments, systems = segment_scores(source, references, system_outputs, metadata, human_scores, lp, metric, testset=challengeset_name, model=model)
+                    segments.to_csv(seg_path, index=False, header=False, sep="\t")
+                    systems.to_csv(sys_path, index=False, header=False, sep="\t")
+                segment_data.append(segments)
+                system_data.append(systems)
+    
+    if args.set=='all' or args.set=='wmt24':
+
+        for lp in tqdm(LANGUAGE_PAIRS, desc="Processing Language Pairs"):
+            seg_path = OUTPUT_FOLDER+f"partial/{metric}.generaltest2024.{lp}.seg.tsv"
+            sys_path = OUTPUT_FOLDER+f"partial/{metric}.generaltest2024.{lp}.sys.tsv"
+
             if os.path.exists(seg_path) and os.path.exists(sys_path):
                 segments = pd.read_csv(seg_path, sep="\t", header=None)
                 systems = pd.read_csv(sys_path, sep="\t", header=None)
             else:
-                if challengeset_name=='challenge_IndicMTE':
-                    segments, systems=score_indicmte(lp, metric, model=model)
-                else:
-                    source, references, system_outputs, metadata, human_scores = read_data(challengeset_name, lp)
-                    segments, systems = segment_scores(source, references, system_outputs, metadata, human_scores, lp, metric, testset=challengeset_name, model=model)
+                source, references, system_outputs, metadata, human_scores = read_data('generaltest2024', lp)
+                segments, systems = segment_scores(source, references, system_outputs, metadata, human_scores, lp, metric, model=model)
                 segments.to_csv(seg_path, index=False, header=False, sep="\t")
                 systems.to_csv(sys_path, index=False, header=False, sep="\t")
             segment_data.append(segments)
             system_data.append(systems)
-
-    for lp in tqdm(LANGUAGE_PAIRS, desc="Processing Language Pairs"):
-        seg_path = OUTPUT_FOLDER+f"partial/{metric}.generaltest2024.{lp}.seg.tsv"
-        sys_path = OUTPUT_FOLDER+f"partial/{metric}.generaltest2024.{lp}.sys.tsv"
-
-        if os.path.exists(seg_path) and os.path.exists(sys_path):
-            segments = pd.read_csv(seg_path, sep="\t", header=None)
-            systems = pd.read_csv(sys_path, sep="\t", header=None)
-        else:
-            source, references, system_outputs, metadata, human_scores = read_data('generaltest2024', lp)
-            segments, systems = segment_scores(source, references, system_outputs, metadata, human_scores, lp, metric, model=model)
-            segments.to_csv(seg_path, index=False, header=False, sep="\t")
-            systems.to_csv(sys_path, index=False, header=False, sep="\t")
-        segment_data.append(segments)
-        system_data.append(systems)
     
     segment_data = pd.concat(segment_data, ignore_index=True)
     segment_data.to_csv(OUTPUT_FOLDER+"{}.seg.score".format(metric), index=False, header=False, sep="\t")

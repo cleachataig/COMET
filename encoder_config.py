@@ -1,10 +1,10 @@
-model_pairs = {
-    "BERT": "bert-base-multilingual-cased",
-    "BERT": "setu4993/LaBSE",
-    "XLM-RoBERTa": "xlm-roberta-base",  
-    "Universal": "google/mt5-base",
-    "Universal": "cis-lmu/glot500-base",
-    "Universal": "facebook/nllb-200-distilled-600M",
-    "Universal":"ai4bharat/indic-bert",
-    "Universal":"Davlan/afro-xlmr-large"
-    }
+pretrained_models=(
+    "bert-base-multilingual-cased"
+    "setu4993/LaBSE"
+    "xlm-roberta-base"
+    "google/mt5-base"
+    "cis-lmu/glot500-base"
+    "facebook/nllb-200-distilled-600M"
+    "ai4bharat/indic-bert"
+    "Davlan/afro-xlmr-large"
+    )

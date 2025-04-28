@@ -30,12 +30,18 @@ For more details run the following command:
 """
 
 import os
+import copy
 import json
 from pprint import pprint
 import logging
 import warnings
 
 import torch
+mem_limit = os.getenv("MEMORY_LIMIT")
+if mem_limit is not None:
+    torch.cuda.set_per_process_memory_fraction(float(mem_limit), device=0)
+    print(f"Limiting memory to {mem_limit} of GPU 0")
+
 from jsonargparse import ActionConfigFile, ArgumentParser, namespace_to_dict
 from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
@@ -52,7 +58,7 @@ from comet.models import (RankingMetric, ReferencelessRegression,
 torch.set_float32_matmul_precision('high')
 
 logger = logging.getLogger(__name__)
-progress_bar_callback = TQDMProgressBar(refresh_rate=1000)
+progress_bar_callback = TQDMProgressBar(refresh_rate=10000)
 
 
 def read_arguments() -> ArgumentParser:
@@ -97,8 +103,14 @@ def read_arguments() -> ArgumentParser:
     parser.add_argument(
         "--n_trials",
         type=int,
-        default=5,
+        default=16,
         help="Number of trials for parameter search.",
+    )
+    parser.add_argument(
+        "--n_jobs",
+        type=int,
+        default=1,
+        help="Number of concurrent jobs.",
     )
     return parser
 
@@ -195,13 +207,13 @@ def initialize_model(configs):
 
     return model
 
-def save_visualizations(study, output_dir="optuna_viz"):
+def save_visualizations(study, output_dir="optuna"):
     os.makedirs(output_dir, exist_ok=True)
     vis.plot_optimization_history(study).write_html(f"{output_dir}/history.html")
     vis.plot_param_importances(study).write_html(f"{output_dir}/importances.html")
     vis.plot_parallel_coordinate(study).write_html(f"{output_dir}/parallel.html")
     vis.plot_contour(study).write_html(f"{output_dir}/contour.html")
-    print(f"Saved visualizations to {output_dir}/")
+    print(f"Saved visualizations to {output_dir}")
 
 
 def hyperparameter_search(cfg):
@@ -220,20 +232,58 @@ def hyperparameter_search(cfg):
         pretrained = "unknown"
 
     study_name=f"{model_type}-{pretrained.replace('/', '_')}"
-    storage_url = f"sqlite:///{study_name}.db"
-
+    os.makedirs("optuna/", exist_ok=True)
+    storage_url = f"sqlite:///optuna/{study_name}.db"
+    old_storage_url = f"sqlite:///optuna/old/{study_name}.db"
+    old_study = optuna.load_study(study_name=study_name, storage=old_storage_url)
+    existing_trials = {}
+    for trial in old_study.trials:
+        if trial.state == optuna.trial.TrialState.COMPLETE:
+            # Ensure that "keep_embeddings_frozen" is set to True for old trials
+            trial_params = trial.params.copy()
+            if "keep_embeddings_frozen" not in trial_params:
+                trial_params["keep_embeddings_frozen"] = True  # Assume True for old trials
+            # Store trial parameters and their corresponding value
+            existing_trials[frozenset(trial_params.items())] = trial.value
+    print(existing_trials)
+    
     def objective(trial):
-        try:
-            # Dynamically set trial parameters
-            for param, values in search_space.items():
-                value = trial.suggest_categorical(param, values)
-                if cfg.regression_metric is not None:
-                    setattr(cfg.regression_metric.init_args, param, value)
-                elif cfg.ranking_metric is not None:
-                    setattr(cfg.ranking_metric.init_args, param, value)
+        
+        trial_params = {}
+        for param, values in search_space.items():
+            value = trial.suggest_categorical(param, values)
+            trial_params[param] = value  # Store the suggested value for later use
+        
+        # Check if the trial parameters already exist in the old study
+        trial_params_frozen = frozenset(trial_params.items())
+        if trial_params_frozen in existing_trials:
+            old_trial_value = existing_trials[trial_params_frozen]
+            print(f"[Trial {trial.number}] Skipping trial with parameters {trial_params} as it already exists in the old study.")
+            print(f"Old trial value: {old_trial_value}")
+            raise optuna.TrialPruned()  # Prune the trial since it's already completed in the previous study
 
-            model = initialize_model(cfg)
-            trainer = initialize_trainer(cfg)
+        cfg_trial = copy.deepcopy(cfg) 
+        trial_id = trial.number
+        base_log_dir = cfg_trial.trainer.init_args.default_root_dir
+        # If it's wrapped in a config object (e.g., OmegaConf), resolve the string
+        if hasattr(base_log_dir, "__str__"):
+            base_log_dir = str(base_log_dir)
+
+        log_dir = os.path.join(base_log_dir, f"trial_{trial_id}")
+        cfg_trial.trainer.init_args.default_root_dir = log_dir
+        
+        try:
+            # Set the parameters in the configuration
+            if cfg_trial.regression_metric is not None:
+                for param, value in trial_params.items():
+                    setattr(cfg_trial.regression_metric.init_args, param, value)
+            elif cfg_trial.ranking_metric is not None:
+                for param, value in trial_params.items():
+                    setattr(cfg_trial.ranking_metric.init_args, param, value)
+
+            # Initialize the model and trainer with the updated config
+            model = initialize_model(cfg_trial)
+            trainer = initialize_trainer(cfg_trial)
             trainer.fit(model)
 
             # Adjust based on your validation metric name
@@ -246,7 +296,6 @@ def hyperparameter_search(cfg):
             print(f"[Trial {trial.number}] Failed with error: {e}")
             raise optuna.TrialPruned()
 
-
     study = optuna.create_study(
         direction="minimize",
         sampler=GridSampler(search_space),
@@ -254,8 +303,8 @@ def hyperparameter_search(cfg):
         storage=storage_url,
         load_if_exists=True,
     )
-    study.optimize(objective, n_trials=cfg.n_trials)
-    save_visualizations(study, output_dir=f"optuna_viz/{study_name}")
+    study.optimize(objective, n_trials=cfg.n_trials, n_jobs=cfg.n_jobs)
+    save_visualizations(study, output_dir=f"optuna/{study_name}")
 
     print("Best hyperparameters found:")
     print(study.best_params)

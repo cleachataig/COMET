@@ -5,7 +5,7 @@ ranking_metric:
     keep_embeddings_frozen: True
     optimizer: AdamW
     encoder_learning_rate: 1.0e-05
-    learning_rate: 3e-05
+    learning_rate: 1.5e-05
     layerwise_decay: 0.95
     encoder_model: Universal
     pretrained_model: cis-lmu/glot500-base

@@ -139,5 +139,5 @@ logs/
 evaluation_wmt24metrics/metrics_inputs/
 evaluation_wmt24metrics/scores/input
 results/
-*.db
+optuna/
 configs/tmp/

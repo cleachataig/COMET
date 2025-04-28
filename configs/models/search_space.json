@@ -1,5 +1,6 @@
 {
+    "keep_embeddings_frozen": [true, false],
     "learning_rate": [1.5e-05, 3e-05],
-    "batch_size": [4,16],
-    "dropout": [0.1, 0.3]
+    "batch_size": [4, 16],
+    "dropout":[0.1, 0.3]
   }
