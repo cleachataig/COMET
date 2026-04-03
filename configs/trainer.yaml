@@ -1,13 +1,13 @@
 class_path: pytorch_lightning.trainer.trainer.Trainer
 init_args:
   accelerator: gpu
-  devices: 1
+  devices: 2
   #strategy: ddp # Uncomment this line for distributed training
   #precision: 16
   accumulate_grad_batches: 8
   benchmark: null
   check_val_every_n_epoch: 1
-  default_root_dir: '/home/mila/c/clea.chataigner/scratch/lightning_logs/xlm-roberta-base'
+  default_root_dir: '/home/mila/c/clea.chataigner/scratch/lightning_logs/xlm-roberta-xxl'
   deterministic: False
   fast_dev_run: False
   max_epochs: 10

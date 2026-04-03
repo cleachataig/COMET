@@ -15,7 +15,7 @@ regression_metric:
     layer_norm: False
     loss: mse
     dropout: 0.1
-    batch_size: 16
+    batch_size: 1
     train_data: 
       - data/1720-da.mlqe-src.csv
     validation_data: 

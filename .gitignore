@@ -141,3 +141,4 @@ evaluation_wmt24metrics/scores/input
 results/
 optuna/
 configs/tmp/
+~/
